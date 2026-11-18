@@ -1,0 +1,101 @@
+package org.firstinspires.ftc.teamcode.core.implementations;
+
+import com.bylazar.telemetry.PanelsTelemetry;
+import com.bylazar.telemetry.TelemetryManager;
+import com.pedropathing.drivetrain.DrivePowers;
+import com.pedropathing.revhub.drivetrains.Swerve;
+import com.qualcomm.robotcore.eventloop.opmode.OpMode;
+import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
+import org.firstinspires.ftc.teamcode.drive.pedroPathing.SwerveConstants;
+import org.firstinspires.ftc.teamcode.drive.pedroPathing.DifferentialPod;
+
+/**
+ * Robot-centric swerve drive through Pedro's {@link Swerve}, the same path the Follower uses.
+ * Left stick translates, right stick X turns. Pod angles are in Pedro's frame (pi/2 = forward).
+ * Pod powers, angles (rad) and PID outputs are also sent to Panels telemetry for graphing.
+ */
+@TeleOp(name = "4 - SwerveDriveTester")
+public class SwerveDriveTester extends OpMode {
+    private static final double DEADBAND = 0.1;
+    private static final String[] POD_VALUE_NAMES = {"left.leftPower", "left.rightPower", "right.leftPower",
+            "right.rightPower", "left.actualAngle", "right.actualAngle", "left.desiredAngle",
+            "right.desiredAngle", "left.targetAngle", "right.targetAngle",
+            "left.pidOutput", "right.pidOutput"};
+    private DifferentialPod leftPod, rightPod;
+    private Swerve swerve;
+    private TelemetryManager panelsTelemetry;
+
+    private ControlMode activeControlMode = ControlMode.DRIVE;
+
+    @Override
+    public void init() {
+        leftPod = SwerveConstants.leftPod(hardwareMap);
+        rightPod = SwerveConstants.rightPod(hardwareMap);
+        leftPod.resetEncoders();
+        rightPod.resetEncoders();
+        swerve = new Swerve(hardwareMap, SwerveConstants.swerveConfig, leftPod, rightPod);
+        panelsTelemetry = PanelsTelemetry.INSTANCE.getTelemetry();
+    }
+
+    @Override
+    public void loop() {
+        // Pedro: forward +, strafe + = left, turn + = CCW.
+        double forward = -applyDeadband(gamepad1.left_stick_y);
+        double strafeLeft = -applyDeadband(gamepad1.left_stick_x);
+        double turnCcw = -applyDeadband(gamepad1.right_stick_x);
+        swerve.drive(new DrivePowers(forward, strafeLeft, turnCcw), true);
+
+        double[] values = {leftPod.getLeftPower(), leftPod.getRightPower(), rightPod.getLeftPower(),
+                rightPod.getRightPower(), leftPod.getAngle(), rightPod.getAngle(), leftPod.getDesiredAngle(),
+                rightPod.getDesiredAngle(), leftPod.getTargetAngle(), rightPod.getTargetAngle(),
+                leftPod.getTurnPower(), rightPod.getTurnPower()};
+        for (int i = 0; i < values.length; i++) panelsTelemetry.addData("swerve.pods." + POD_VALUE_NAMES[i], values[i]);
+        panelsTelemetry.update();
+
+        if(gamepad1.dpad_left) {
+            activeControlMode = ControlMode.ADJUST_LEFT_POD;
+        } else if(gamepad1.dpad_right){
+            activeControlMode = ControlMode.ADJUST_RIGHT_POD;
+        } else if(gamepad1.dpad_up) {
+            activeControlMode = ControlMode.DRIVE;
+        }
+
+        if (activeControlMode == ControlMode.ADJUST_LEFT_POD) {
+            leftPod.setForwardAngleRad(leftPod.getForwardAngleRad() + (gamepad1.left_trigger - gamepad1.right_trigger) * 0.05);
+            leftPod.setMode(DifferentialPod.Mode.ROTATE_ONLY);
+            rightPod.setMode(DifferentialPod.Mode.ROTATE_ONLY);
+            leftPod.move(0, 0, false);
+        } else if (activeControlMode == ControlMode.ADJUST_RIGHT_POD) {
+            rightPod.setForwardAngleRad(rightPod.getForwardAngleRad() + (gamepad1.left_trigger - gamepad1.right_trigger) * 0.05);
+            leftPod.setMode(DifferentialPod.Mode.ROTATE_ONLY);
+            rightPod.setMode(DifferentialPod.Mode.ROTATE_ONLY);
+            rightPod.move(0, 0, false);
+        } else {
+            leftPod.setMode(DifferentialPod.Mode.DRIVE_AND_ROTATE);
+            rightPod.setMode(DifferentialPod.Mode.DRIVE_AND_ROTATE);
+        }
+
+        telemetry.addData("Forward / strafe left / turn CCW", "%.2f / %.2f / %.2f", forward, strafeLeft, turnCcw);
+        telemetry.addData("Left angle actual / target (deg)", "%.1f / %.1f",
+                Math.toDegrees(leftPod.getAngle()), Math.toDegrees(leftPod.getTargetAngle()));
+        telemetry.addData("Right angle actual / target (deg)", "%.1f / %.1f",
+                Math.toDegrees(rightPod.getAngle()), Math.toDegrees(rightPod.getTargetAngle()));
+        telemetry.addData("PID output L/R", "%.3f / %.3f", leftPod.getTurnPower(), rightPod.getTurnPower());
+        telemetry.update();
+    }
+
+    @Override
+    public void stop() {
+        if (swerve != null) swerve.stop(false);
+    }
+
+    private double applyDeadband(double input) {
+        return Math.abs(input) > DEADBAND ? input : 0;
+    }
+
+    public enum ControlMode {
+        DRIVE,
+        ADJUST_LEFT_POD,
+        ADJUST_RIGHT_POD
+    }
+}
